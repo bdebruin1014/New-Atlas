@@ -1,0 +1,1424 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTHENTICATION & USER MANAGEMENT
+// ============================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  phone     String?
+  avatar    String?
+  role      UserRole @default(TEAM_MEMBER)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teamMembers      TeamMember[]
+  assignedTasks    Task[]
+  createdNotes     Note[]
+  activities       Activity[]
+  assignedOpportunities Opportunity[]
+  assignedProjects Project[]
+  assignedJobs     Job[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  GLOBAL_ADMIN
+  MODULE_ADMIN
+  TEAM_MEMBER
+  READ_ONLY
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members TeamMember[]
+  opportunities Opportunity[]
+  projects Project[]
+  jobs     Job[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  teamId String
+  userId String
+  role   String?
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// ============================================================================
+// GLOBAL CONTACTS
+// ============================================================================
+
+model Contact {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  company     String?
+  email       String?
+  phone       String?
+  secondaryPhone String?
+  mailingAddress String?
+  notes       String?
+  status      ContactStatus @default(ACTIVE)
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contactTypes ContactType[]
+  opportunityContacts OpportunityContact[]
+  projectContacts ProjectContact[]
+  jobContacts JobContact[]
+
+  @@map("contacts")
+}
+
+enum ContactStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model ContactType {
+  id        String @id @default(cuid())
+  contactId String
+  type      ContactTypeEnum
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, type])
+  @@map("contact_types")
+}
+
+enum ContactTypeEnum {
+  OWNER_PRINCIPAL
+  INVESTOR
+  ATTORNEY_LEGAL
+  LENDER
+  SURVEYOR
+  ENGINEER
+  ARCHITECT
+  APPRAISER
+  REAL_ESTATE_AGENT_BROKER
+  TITLE_COMPANY
+  INSPECTOR
+  MUNICIPALITY_CONTACT
+  SUBCONTRACTOR_VENDOR
+  SUPERINTENDENT
+  PROJECT_MANAGER
+  ACCOUNTANT
+  INSURANCE_AGENT
+  UTILITY_PROVIDER
+  PROPERTY_MANAGER
+  BUYER
+  SELLER
+  OTHER
+}
+
+// ============================================================================
+// MODULE 1: OPPORTUNITIES
+// ============================================================================
+
+model Opportunity {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  city        String?
+  county      String?
+  state       String?
+  zip         String?
+  parcelNumber String?
+  type        OpportunityType
+  stage       String
+  source      OpportunitySource?
+  assignedToId String?
+  entityId    String?
+  teamId      String?
+  projectedPurchasePrice Decimal?
+  projectedSalePrice Decimal?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  offerDate   DateTime?
+  contractDate DateTime?
+  ddExpiration DateTime?
+  closingDate  DateTime?
+  
+  // Scattered Lot specific fields
+  zoning      String?
+  buildType   String?
+  road        String?
+  constructionBuffers String?
+  historicDistrictOverlay Boolean?
+  waterAvailable Boolean?
+  sewerAvailable Boolean?
+  powerAvailable Boolean?
+  housePlanId String?
+  frontGarage Boolean?
+  surveyComplete Boolean?
+  buildableFootprint String?
+  lotWidth    Decimal?
+  lotDepth    Decimal?
+  lotSF       Decimal?
+
+  // Lot Development specific fields
+  totalAcreage Decimal?
+  estimatedLots Int?
+  zoningRequired String?
+  preliminaryPlatStatus String?
+  targetBuilders String?
+  infrastructureScope String?
+
+  assignedTo User? @relation(fields: [assignedToId], references: [id])
+  entity     Entity? @relation(fields: [entityId], references: [id])
+  team       Team? @relation(fields: [teamId], references: [id])
+  housePlan  FloorPlan? @relation(fields: [housePlanId], references: [id])
+
+  contacts   OpportunityContact[]
+  documents  Document[]
+  notes      Note[]
+  activities Activity[]
+  workflow   WorkflowInstance?
+  dealAnalyzer DealAnalyzer?
+  project    Project?
+
+  @@map("opportunities")
+}
+
+enum OpportunityType {
+  SCATTERED_LOT
+  LOT_DEVELOPMENT
+  COMMUNITY_DEVELOPMENT
+  LOT_PURCHASE
+  OTHER
+}
+
+enum OpportunitySource {
+  MLS
+  WHOLESALER
+  DIRECT
+  BROKER
+  OFF_MARKET
+  REFERRAL
+  OTHER
+}
+
+model OpportunityContact {
+  id            String @id @default(cuid())
+  opportunityId String
+  contactId     String
+  role          String
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  contact     Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, contactId, role])
+  @@map("opportunity_contacts")
+}
+
+model DealAnalyzer {
+  id            String @id @default(cuid())
+  opportunityId String @unique
+  
+  // User inputs
+  floorPlanId   String?
+  upgradePackage String?
+  municipalityId String?
+  purchasePrice Decimal
+  siteWorkEstimate Decimal?
+  otherSiteCosts Decimal?
+  verticalAdjustments Decimal?
+  assetSalePrice Decimal
+  sellingConcessions Decimal?
+  projectDuration Int? // days
+  interestRateOverride Decimal?
+  
+  // Calculated outputs
+  sticksAndBricks Decimal?
+  upgradesCost    Decimal?
+  lotPreparation  Decimal?
+  municipalitySoftCosts Decimal?
+  builderFee      Decimal?
+  contingency     Decimal?
+  totalContractCost Decimal?
+  fixedCosts      Decimal?
+  totalProjectCost Decimal?
+  loanAmount      Decimal?
+  equityRequired  Decimal?
+  interestCost    Decimal?
+  costOfCapital   Decimal?
+  totalCarryCosts Decimal?
+  totalAllInCost  Decimal?
+  totalRevenue    Decimal?
+  sellingCosts    Decimal?
+  netSalesProceeds Decimal?
+  netProfit       Decimal?
+  netProfitMargin Decimal?
+  verdict         DealVerdict?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  floorPlan   FloorPlan? @relation(fields: [floorPlanId], references: [id])
+  municipality Municipality? @relation(fields: [municipalityId], references: [id])
+  comps       Comp[]
+
+  @@map("deal_analyzers")
+}
+
+enum DealVerdict {
+  STRONG_DEAL
+  GOOD_DEAL
+  MARGINAL
+  NO_GO
+}
+
+model Comp {
+  id        String @id @default(cuid())
+  dealAnalyzerId String
+  mlsLink   String?
+  beds      Int?
+  baths     Decimal?
+  sqft      Int?
+  address   String
+  saleDate  DateTime?
+  salePrice Decimal
+
+  dealAnalyzer DealAnalyzer @relation(fields: [dealAnalyzerId], references: [id], onDelete: Cascade)
+
+  @@map("comps")
+}
+
+// ============================================================================
+// MODULE 2: PROJECTS
+// ============================================================================
+
+model Project {
+  id          String   @id @default(cuid())
+  projectNumber String @unique
+  name        String
+  address     String?
+  type        ProjectType
+  status      ProjectStatus @default(PRE_CONSTRUCTION)
+  
+  ownerEntityId String?
+  builderEntityId String?
+  assignedToId String?
+  teamId      String?
+  opportunityId String? @unique
+  
+  acquisitionDate DateTime?
+  totalBudget Decimal?
+  currentSpend Decimal?
+  projectedFinalCost Decimal?
+  
+  // Scattered Lot / Lot Purchase specific
+  lotWidth    Decimal?
+  lotDepth    Decimal?
+  lotSF       Decimal?
+  zoning      String?
+  setbacks    String?
+  buildableArea String?
+  floorPlanId String?
+  upgradePackage String?
+  utilityConfirmation String?
+  foundationType String?
+  
+  // Lot Development / Community Development specific
+  totalAcreage Decimal?
+  totalLots   Int?
+  preliminaryPlatStatus String?
+  finalPlatStatus String?
+  civilEngineerId String?
+  municipality String?
+  impactFees  Decimal?
+  infrastructureAcceptance String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerEntity Entity? @relation("ProjectOwner", fields: [ownerEntityId], references: [id])
+  builderEntity Entity? @relation("ProjectBuilder", fields: [builderEntityId], references: [id])
+  assignedTo  User? @relation(fields: [assignedToId], references: [id])
+  team        Team? @relation(fields: [teamId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  floorPlan   FloorPlan? @relation(fields: [floorPlanId], references: [id])
+  civilEngineer Contact? @relation(fields: [civilEngineerId], references: [id])
+
+  contacts    ProjectContact[]
+  expenses    ProjectExpense[]
+  lots        Lot[]
+  documents   Document[]
+  notes       Note[]
+  activities  Activity[]
+  workflow    WorkflowInstance?
+  jobs        Job[]
+  builderContract BuilderContract?
+
+  @@map("projects")
+}
+
+enum ProjectType {
+  SCATTERED_LOT
+  LOT_DEVELOPMENT
+  COMMUNITY_DEVELOPMENT
+  LOT_PURCHASE
+}
+
+enum ProjectStatus {
+  PRE_CONSTRUCTION
+  ACTIVE
+  CONSTRUCTION
+  PUNCH_CO
+  DISPOSITION
+  COMPLETE
+  CLOSED
+}
+
+model ProjectContact {
+  id        String @id @default(cuid())
+  projectId String
+  contactId String
+  role      String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, contactId, role])
+  @@map("project_contacts")
+}
+
+model BuilderContract {
+  id        String @id @default(cuid())
+  projectId String @unique
+  contractType ContractType
+  contractAmount Decimal?
+  feeStructure String?
+  executionDate DateTime?
+  scopeSummary String?
+  paymentTerms String?
+  changeOrderProcedures String?
+  warrantyTerms String?
+  insuranceRequirements String?
+  signedDocument String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("builder_contracts")
+}
+
+enum ContractType {
+  COST_PLUS_FIXED_FEE
+  COST_PLUS_PERCENTAGE
+  STIPULATED_SUM
+}
+
+model Lot {
+  id        String @id @default(cuid())
+  projectId String
+  lotNumber String
+  width     Decimal?
+  depth     Decimal?
+  sqft      Decimal?
+  status    LotStatus @default(RAW)
+  floorPlanId String?
+  upgradePackage String?
+  projectedSalePrice Decimal?
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  floorPlan FloorPlan? @relation(fields: [floorPlanId], references: [id])
+  unit      Unit?
+
+  @@unique([projectId, lotNumber])
+  @@map("lots")
+}
+
+enum LotStatus {
+  RAW
+  DEVELOPING
+  FINISHED
+  CONTRACTED
+  SOLD
+}
+
+model ProjectExpense {
+  id          String @id @default(cuid())
+  projectId   String
+  date        DateTime
+  description String
+  amount      Decimal
+  category    String
+  vendorId    String?
+  reference   String?
+  document    String?
+  status      ExpenseStatus @default(PENDING)
+  createdAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendor  Contact? @relation(fields: [vendorId], references: [id])
+
+  @@map("project_expenses")
+}
+
+enum ExpenseStatus {
+  PENDING
+  APPROVED
+  SCHEDULED
+  PAID
+}
+
+// ============================================================================
+// MODULE 3: CONSTRUCTION MANAGEMENT
+// ============================================================================
+
+model Job {
+  id          String @id @default(cuid())
+  jobNumber   String @unique
+  name        String
+  clientType  ClientType
+  clientId    String?
+  projectId   String?
+  contractType ContractType
+  contractAmount Decimal?
+  builderFee  Decimal?
+  status      JobStatus @default(PRE_CONSTRUCTION)
+  numberOfUnits Int @default(1)
+  state       String?
+  startDate   DateTime?
+  projectedCompletion DateTime?
+  assignedToId String?
+  teamId      String?
+  superintendentId String?
+  projectManagerId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignedTo  User? @relation(fields: [assignedToId], references: [id])
+  team        Team? @relation(fields: [teamId], references: [id])
+  client      Entity? @relation(fields: [clientId], references: [id])
+  project     Project? @relation(fields: [projectId], references: [id])
+  superintendent Contact? @relation("JobSuperintendent", fields: [superintendentId], references: [id])
+  projectManager Contact? @relation("JobProjectManager", fields: [projectManagerId], references: [id])
+
+  units       Unit[]
+  contacts    JobContact[]
+  documents   Document[]
+  notes       Note[]
+  activities  Activity[]
+  workflow    WorkflowInstance?
+  purchaseOrders PurchaseOrder[]
+  changeOrders ChangeOrder[]
+
+  @@map("jobs")
+}
+
+enum ClientType {
+  INTERNAL
+  THIRD_PARTY
+}
+
+enum JobStatus {
+  PRE_CONSTRUCTION
+  ACTIVE
+  PUNCH_CO
+  WARRANTY
+  COMPLETE
+  CLOSED
+}
+
+model JobContact {
+  id      String @id @default(cuid())
+  jobId   String
+  contactId String
+  role    String
+
+  job     Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, contactId, role])
+  @@map("job_contacts")
+}
+
+model Unit {
+  id          String @id @default(cuid())
+  unitNumber  String
+  jobId       String
+  lotId       String?
+  address     String?
+  floorPlanId String?
+  upgradePackage String?
+  status      UnitStatus @default(PRE_CONSTRUCTION)
+  
+  // Budget fields
+  baseCost    Decimal?
+  upgradeCost Decimal?
+  lotPrepCost Decimal?
+  siteAdjustments Decimal?
+  softCosts   Decimal?
+  builderFee  Decimal?
+  contingency Decimal?
+  totalBudget Decimal?
+  totalCommitted Decimal?
+  totalActual Decimal?
+  variance    Decimal?
+  
+  // Key dates
+  permitIssued DateTime?
+  constructionStart DateTime?
+  projectedCompletion DateTime?
+  actualCompletion DateTime?
+  coDate      DateTime?
+  warrantyExpiration DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  job         Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  lot         Lot? @relation(fields: [lotId], references: [id])
+  floorPlan   FloorPlan? @relation(fields: [floorPlanId], references: [id])
+
+  milestones  Milestone[]
+  purchaseOrders PurchaseOrder[]
+  changeOrders ChangeOrder[]
+  selections  Selection[]
+  inspections Inspection[]
+  permits     Permit[]
+  warrantyClaims WarrantyClaim[]
+  issues      Issue[]
+
+  @@unique([jobId, unitNumber])
+  @@map("units")
+}
+
+enum UnitStatus {
+  PRE_CONSTRUCTION
+  SITE_WORK
+  FOUNDATION
+  FRAMING
+  DRY_IN
+  MEP_ROUGH_IN
+  INSULATION
+  DRYWALL
+  INTERIOR_FINISH
+  PAINT
+  FLOORING
+  FINAL_MEP
+  PUNCH_LIST
+  CLOSE_OUT
+  WARRANTY
+  COMPLETE
+}
+
+model Milestone {
+  id          String @id @default(cuid())
+  unitId      String
+  phase       Int
+  name        String
+  plannedStart DateTime?
+  plannedEnd  DateTime?
+  actualStart DateTime?
+  actualEnd   DateTime?
+  status      MilestoneStatus @default(NOT_STARTED)
+  requiredInspections String[]
+  
+  unit        Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  inspections Inspection[]
+
+  @@unique([unitId, phase])
+  @@map("milestones")
+}
+
+enum MilestoneStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETE
+  DELAYED
+}
+
+model PurchaseOrder {
+  id          String @id @default(cuid())
+  poNumber    String @unique
+  jobId       String
+  unitId      String?
+  tradeCategory String
+  vendorId    String
+  description String?
+  amount      Decimal
+  status      POStatus @default(DRAFT)
+  issueDate   DateTime?
+  completionDate DateTime?
+  invoiceDate DateTime?
+  paymentDate DateTime?
+  lienWaiverStatus LienWaiverStatus @default(NONE)
+  retainage   Decimal?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  job         Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  unit        Unit? @relation(fields: [unitId], references: [id])
+  vendor      Contact @relation("PurchaseOrderVendor", fields: [vendorId], references: [id])
+  changeOrders ChangeOrder[]
+
+  @@map("purchase_orders")
+}
+
+enum POStatus {
+  DRAFT
+  ISSUED
+  WORK_COMPLETE
+  INVOICED
+  APPROVED
+  SCHEDULED_FOR_PAYMENT
+  PAID
+}
+
+enum LienWaiverStatus {
+  NONE
+  CONDITIONAL_RECEIVED
+  UNCONDITIONAL_RECEIVED
+}
+
+model ChangeOrder {
+  id          String @id @default(cuid())
+  coNumber    String @unique
+  jobId       String
+  unitId      String?
+  poId        String?
+  description String
+  reason      ChangeOrderReason
+  costImpact  Decimal
+  scheduleImpact Int? // days
+  status      ChangeOrderStatus @default(SUBMITTED)
+  approvedBy  String?
+  approvalDate DateTime?
+  markup      Decimal?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  job         Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  unit        Unit? @relation(fields: [unitId], references: [id])
+  po          PurchaseOrder? @relation(fields: [poId], references: [id])
+
+  @@map("change_orders")
+}
+
+enum ChangeOrderReason {
+  OWNER_REQUEST
+  FIELD_CONDITION
+  DESIGN_ERROR
+  CODE_REQUIREMENT
+  SCOPE_CLARIFICATION
+}
+
+enum ChangeOrderStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  DENIED
+}
+
+model Selection {
+  id          String @id @default(cuid())
+  unitId      String
+  category    String
+  item        String
+  description String?
+  vendorId    String?
+  baseCost    Decimal?
+  upgradeDelta Decimal?
+  status      SelectionStatus @default(PENDING)
+  poId        String?
+
+  unit        Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  vendor      Contact? @relation(fields: [vendorId], references: [id])
+
+  @@map("selections")
+}
+
+enum SelectionStatus {
+  PENDING
+  SELECTED
+  ORDERED
+  RECEIVED
+  INSTALLED
+}
+
+model Inspection {
+  id          String @id @default(cuid())
+  unitId      String
+  milestoneId String?
+  type        String
+  jurisdiction String?
+  inspectorName String?
+  scheduledDate DateTime?
+  actualDate  DateTime?
+  result      InspectionResult?
+  notes       String?
+  reinspectionDate DateTime?
+  reinspectionResult InspectionResult?
+
+  unit        Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id])
+
+  @@map("inspections")
+}
+
+enum InspectionResult {
+  PASS
+  FAIL
+  CONDITIONAL
+}
+
+model Permit {
+  id          String @id @default(cuid())
+  unitId      String?
+  jobId       String?
+  type        String
+  jurisdiction String
+  applicationDate DateTime?
+  permitNumber String?
+  issuedDate  DateTime?
+  expirationDate DateTime?
+  inspectionRequirements String?
+  fee         Decimal?
+  status      PermitStatus @default(APPLIED)
+
+  unit        Unit? @relation(fields: [unitId], references: [id])
+
+  @@map("permits")
+}
+
+enum PermitStatus {
+  APPLIED
+  IN_REVIEW
+  ISSUED
+  ACTIVE
+  EXPIRED
+  CLOSED
+}
+
+model WarrantyClaim {
+  id          String @id @default(cuid())
+  unitId      String
+  claimDate   DateTime @default(now())
+  category    String
+  description String
+  photos      String[]
+  urgency     WarrantyUrgency
+  responsibleSubId String?
+  notificationDate DateTime?
+  scheduledRepair DateTime?
+  completionDate DateTime?
+  resolutionNotes String?
+  ownerSignoff Boolean @default(false)
+  cost        Decimal?
+  status      WarrantyClaimStatus @default(OPEN)
+
+  unit        Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  responsibleSub Contact? @relation(fields: [responsibleSubId], references: [id])
+
+  @@map("warranty_claims")
+}
+
+enum WarrantyUrgency {
+  ROUTINE
+  URGENT
+  EMERGENCY
+}
+
+enum WarrantyClaimStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  VERIFIED
+}
+
+model Issue {
+  id          String @id @default(cuid())
+  unitId      String
+  milestone   String?
+  category    IssueCategory
+  description String
+  photos      String[]
+  severity    IssueSeverity
+  assignedToId String?
+  dueDate     DateTime?
+  resolution  String?
+  costImpact  Decimal?
+  status      IssueStatus @default(OPEN)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  unit        Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@map("issues")
+}
+
+enum IssueCategory {
+  SAFETY_HAZARD
+  QUALITY_DEFICIENCY
+  SCHEDULE_IMPACT
+  MATERIAL_DEFECT
+  SUB_PERFORMANCE
+  WEATHER_DELAY
+  CODE_VIOLATION
+}
+
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  VERIFIED
+}
+
+// ============================================================================
+// MODULE 4: ACCOUNTING
+// ============================================================================
+
+model Entity {
+  id          String @id @default(cuid())
+  name        String
+  useType     EntityUseType
+  legalType   EntityLegalType
+  parentId    String?
+  taxId       String?
+  stateOfFormation String?
+  formationDate DateTime?
+  address     String?
+  status      String @default("Active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent      Entity? @relation("EntityHierarchy", fields: [parentId], references: [id])
+  children    Entity[] @relation("EntityHierarchy")
+
+  chartOfAccounts Account[]
+  transactions Transaction[]
+  investors   Investor[]
+  loans       Loan[]
+  opportunities Opportunity[]
+  projectsAsOwner Project[] @relation("ProjectOwner")
+  projectsAsBuilder Project[] @relation("ProjectBuilder")
+  jobs        Job[]
+
+  @@map("entities")
+}
+
+enum EntityUseType {
+  OPERATING_COMPANY
+  HOLDING_COMPANY
+  SINGLE_PURPOSE_ENTITY
+  FUND_SYNDICATION
+  OTHER
+}
+
+enum EntityLegalType {
+  LLC
+  S_CORPORATION
+  PARTNERSHIP
+  C_CORPORATION
+  SOLE_PROPRIETORSHIP
+  TRUST
+}
+
+model Account {
+  id          String @id @default(cuid())
+  entityId    String
+  accountNumber String
+  name        String
+  type        AccountType
+  subType     String?
+  balance     Decimal @default(0)
+  parentId    String?
+  
+  entity      Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  parent      Account? @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children    Account[] @relation("AccountHierarchy")
+  transactions Transaction[]
+
+  @@unique([entityId, accountNumber])
+  @@map("accounts")
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  COST_OF_SALES
+  OPERATING_EXPENSE
+}
+
+model Transaction {
+  id          String @id @default(cuid())
+  entityId    String
+  accountId   String
+  date        DateTime
+  description String
+  debit       Decimal?
+  credit      Decimal?
+  projectId   String?
+  unitId      String?
+  reference   String?
+  transactionType TransactionType
+  document    String?
+  status      TransactionStatus @default(PENDING)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entity      Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
+
+enum TransactionType {
+  JOURNAL_ENTRY
+  BILL_PAYMENT
+  DEPOSIT
+  TRANSFER
+  DRAW
+  DISTRIBUTION
+  CAPITAL_CONTRIBUTION
+}
+
+enum TransactionStatus {
+  PENDING
+  APPROVED
+  SCHEDULED
+  PAID
+  RECONCILED
+}
+
+model Investor {
+  id          String @id @default(cuid())
+  entityId    String
+  contactId   String?
+  name        String
+  ownershipPercent Decimal
+  capitalCommitment Decimal?
+  capitalContributed Decimal @default(0)
+  preferredReturnRate Decimal?
+  promoteStructure String?
+  accreditationStatus String?
+  accreditationDate DateTime?
+  documents   String[]
+  
+  entity      Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  distributions Distribution[]
+
+  @@map("investors")
+}
+
+model Distribution {
+  id          String @id @default(cuid())
+  investorId  String
+  date        DateTime
+  amount      Decimal
+  distributionType String
+  notes       String?
+
+  investor    Investor @relation(fields: [investorId], references: [id], onDelete: Cascade)
+
+  @@map("distributions")
+}
+
+model Loan {
+  id          String @id @default(cuid())
+  entityId    String
+  lenderName  String
+  loanType    String
+  principalAmount Decimal
+  drawnAmount Decimal @default(0)
+  availableAmount Decimal
+  interestRate Decimal
+  maturityDate DateTime?
+  covenants   String?
+  status      String @default("Active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entity      Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  draws       LoanDraw[]
+
+  @@map("loans")
+}
+
+model LoanDraw {
+  id          String @id @default(cuid())
+  loanId      String
+  requestDate DateTime
+  amount      Decimal
+  purpose     String?
+  status      String
+  fundedDate  DateTime?
+
+  loan        Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@map("loan_draws")
+}
+
+// ============================================================================
+// MODULE 5: ADMIN - FLOOR PLANS & MUNICIPALITIES
+// ============================================================================
+
+model FloorPlan {
+  id          String @id @default(cuid())
+  name        String @unique
+  type        FloorPlanType
+  heatedSF    Int
+  bedrooms    Int
+  bathrooms   Decimal
+  garage      String?
+  unheatedSF  Int?
+  stories     Decimal
+  minLotWidth Decimal
+  minLotDepth Decimal
+  baseCost    Decimal
+  totalCost   Decimal
+  costPerSFBase Decimal
+  costPerSFTotal Decimal
+  classicUpgrade Decimal?
+  eleganceUpgrade Decimal?
+  harmonyUpgrade Decimal?
+  architecturalPlan String?
+  referenceImage String?
+  notes       String?
+  status      String @default("Active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  opportunities Opportunity[]
+  projects    Project[]
+  lots        Lot[]
+  units       Unit[]
+  dealAnalyzers DealAnalyzer[]
+
+  @@map("floor_plans")
+}
+
+enum FloorPlanType {
+  SFH
+  TOWNHOME
+  DUPLEX
+  OTHER
+}
+
+model Municipality {
+  id          String @id @default(cuid())
+  name        String @unique
+  state       String
+  county      String?
+  waterTapFee Decimal?
+  sewerTapFee Decimal?
+  systemDevFee Decimal?
+  totalWSFees Decimal?
+  meterCharges Decimal?
+  impactFees  Decimal?
+  permitFeeSchedule String?
+  miscFees    String?
+  notes       String?
+
+  dealAnalyzers DealAnalyzer[]
+
+  @@map("municipalities")
+}
+
+// ============================================================================
+// SHARED MODELS - DOCUMENTS, NOTES, ACTIVITIES, WORKFLOWS
+// ============================================================================
+
+model Document {
+  id          String @id @default(cuid())
+  name        String
+  url         String
+  type        String?
+  size        Int?
+  uploadDate  DateTime @default(now())
+  
+  opportunityId String?
+  projectId   String?
+  jobId       String?
+
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  job         Job? @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
+}
+
+model Note {
+  id          String @id @default(cuid())
+  content     String
+  createdById String
+  createdAt   DateTime @default(now())
+  
+  opportunityId String?
+  projectId   String?
+  jobId       String?
+
+  createdBy   User @relation(fields: [createdById], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  job         Job? @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("notes")
+}
+
+model Activity {
+  id          String @id @default(cuid())
+  type        String
+  description String
+  userId      String?
+  timestamp   DateTime @default(now())
+  
+  opportunityId String?
+  projectId   String?
+  jobId       String?
+
+  user        User? @relation(fields: [userId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  job         Job? @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
+}
+
+// ============================================================================
+// WORKFLOW ENGINE
+// ============================================================================
+
+model WorkflowTemplate {
+  id          String @id @default(cuid())
+  name        String
+  module      WorkflowModule
+  recordType  String
+  goalStatement String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  milestoneTemplates MilestoneTemplate[]
+  instances   WorkflowInstance[]
+
+  @@map("workflow_templates")
+}
+
+enum WorkflowModule {
+  OPPORTUNITIES
+  PROJECTS
+  CONSTRUCTION
+}
+
+model MilestoneTemplate {
+  id          String @id @default(cuid())
+  workflowTemplateId String
+  name        String
+  description String?
+  sequence    Int
+  entryCriteria String?
+  completionCriteria String?
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+  taskListTemplates TaskListTemplate[]
+
+  @@map("milestone_templates")
+}
+
+model TaskListTemplate {
+  id          String @id @default(cuid())
+  milestoneTemplateId String
+  name        String
+  description String?
+  completionCriteria String?
+
+  milestoneTemplate MilestoneTemplate @relation(fields: [milestoneTemplateId], references: [id], onDelete: Cascade)
+  taskTemplates TaskTemplate[]
+
+  @@map("task_list_templates")
+}
+
+model TaskTemplate {
+  id          String @id @default(cuid())
+  taskListTemplateId String
+  title       String
+  description String?
+  defaultRole String?
+  relativeDueDays Int
+  priority    TaskPriority @default(MEDIUM)
+
+  taskListTemplate TaskListTemplate @relation(fields: [taskListTemplateId], references: [id], onDelete: Cascade)
+
+  @@map("task_templates")
+}
+
+model WorkflowInstance {
+  id          String @id @default(cuid())
+  workflowTemplateId String
+  
+  opportunityId String? @unique
+  projectId   String? @unique
+  jobId       String? @unique
+  
+  status      String @default("Active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  job         Job? @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  milestones  WorkflowMilestone[]
+  tasks       Task[]
+
+  @@map("workflow_instances")
+}
+
+model WorkflowMilestone {
+  id          String @id @default(cuid())
+  workflowInstanceId String
+  name        String
+  description String?
+  sequence    Int
+  status      WorkflowMilestoneStatus @default(NOT_STARTED)
+  entryCriteria String?
+  completionCriteria String?
+  activatedAt DateTime?
+  completedAt DateTime?
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  taskLists   WorkflowTaskList[]
+
+  @@map("workflow_milestones")
+}
+
+enum WorkflowMilestoneStatus {
+  NOT_STARTED
+  ACTIVE
+  COMPLETE
+  SKIPPED
+}
+
+model WorkflowTaskList {
+  id          String @id @default(cuid())
+  milestoneId String
+  name        String
+  description String?
+  completionCriteria String?
+
+  milestone   WorkflowMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_task_lists")
+}
+
+model Task {
+  id          String @id @default(cuid())
+  workflowInstanceId String
+  title       String
+  description String?
+  assignedToRole String?
+  assignedToId String?
+  dueDate     DateTime?
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus @default(NOT_STARTED)
+  completionDate DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  assignedTo  User? @relation(fields: [assignedToId], references: [id])
+
+  @@map("tasks")
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETE
+  SKIPPED
+}
+
+// ============================================================================
+// CALENDAR
+// ============================================================================
+
+model CalendarEvent {
+  id          String @id @default(cuid())
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  type        CalendarEventType
+  userId      String?
+  isCompanyWide Boolean @default(false)
+  
+  opportunityId String?
+  projectId   String?
+  jobId       String?
+  unitId      String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("calendar_events")
+}
+
+enum CalendarEventType {
+  MILESTONE_DUE
+  INSPECTION
+  CLOSING
+  LAND_COMMITTEE
+  HANDOFF_MEETING
+  PERMIT_EXPIRATION
+  INSURANCE_EXPIRATION
+  LOAN_MATURITY
+  TASK_DUE
+  OTHER
+}
